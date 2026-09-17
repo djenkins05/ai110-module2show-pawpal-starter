@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import time
+from typing import ClassVar
 
 
 @dataclass
@@ -9,6 +10,11 @@ class CareTask:
     title: str
     duration_minutes: int
     priority: str
+    # Set by Pet.add_task() so a flattened task list (e.g. from
+    # Owner.get_all_tasks()) can still be traced back to its pet.
+    pet_name: str | None = None
+
+    PRIORITY_WEIGHTS: ClassVar[dict[str, int]] = {"low": 1, "medium": 2, "high": 3}
 
     def priority_weight(self) -> int:
         pass
@@ -54,6 +60,7 @@ class Owner:
 class ScheduledTask:
     task: CareTask
     start_time: time
+    end_time: time
 
 
 @dataclass
@@ -75,7 +82,13 @@ class Schedule:
 class Scheduler:
     def __init__(self, owner: Owner, tasks: list[CareTask] | None = None) -> None:
         self.owner = owner
-        self.tasks = tasks if tasks is not None else []
+        # Defaults to every task the owner's pets need; callers can still pass
+        # an explicit list to test the scheduling logic in isolation.
+        self.tasks = tasks if tasks is not None else owner.get_all_tasks()
+        # Holds the most recently built Schedule so explain() has something
+        # to describe after the fact (mirrors the Scheduler *-- Schedule
+        # composition in the UML).
+        self.schedule: Schedule | None = None
 
     def build_schedule(self) -> Schedule:
         pass

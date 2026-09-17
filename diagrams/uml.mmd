@@ -22,8 +22,15 @@ classDiagram
         -str title
         -int duration_minutes
         -str priority
+        -str pet_name
         +priority_weight() int
         +__str__() str
+    }
+
+    class ScheduledTask {
+        -CareTask task
+        -time start_time
+        -time end_time
     }
 
     class Schedule {
@@ -38,6 +45,7 @@ classDiagram
     class Scheduler {
         -Owner owner
         -list~CareTask~ tasks
+        -Schedule schedule
         +build_schedule() Schedule
         +sort_by_priority() list~CareTask~
         +explain() str
@@ -47,4 +55,5 @@ classDiagram
     Pet *-- CareTask : owns
     Scheduler o-- Owner : references
     Scheduler *-- Schedule : produces
-    Schedule o-- CareTask : references
+    Schedule o-- ScheduledTask : references
+    ScheduledTask o-- CareTask : references

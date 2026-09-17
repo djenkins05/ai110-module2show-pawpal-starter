@@ -32,8 +32,13 @@ preferences) and a collection of `CareTask` objects, then selects and orders tas
 
 **b. Design changes**
 
-- Did your design change during implementation?
-- If yes, describe at least one change and why you made it.
+Yes — a few changes came out of reviewing the class skeletons against the original UML:
+
+- **Added a `ScheduledTask` class.** The original diagram had `Schedule.scheduled_tasks` typed as `list~ScheduledTask~` without `ScheduledTask` ever being defined, and my notes above describe "an ordered list of scheduled tasks, each with a start and end time" — which is more than a bare `CareTask` carries. `ScheduledTask` now pairs a `CareTask` with a `start_time` and `end_time`, and `Schedule` references it instead of referencing `CareTask` directly.
+- **Gave `CareTask` a `pet_name` field.** `Owner.get_all_tasks()` flattens every pet's tasks into one list, which meant that once a task reached the `Scheduler` or `Schedule`, there was no way to say which pet it belonged to. `Pet.add_task()` will stamp this field when a task is added, so `Schedule.summary()` and `Scheduler.explain()` can still report per-pet detail after the flattening.
+- **Added a `PRIORITY_WEIGHTS` lookup table on `CareTask`.** `priority_weight()` needs some mapping from `"low"/"medium"/"high"` to a sortable number; putting it as a class constant on `CareTask` keeps that mapping in one place instead of letting the scheduler hardcode its own copy.
+- **`Scheduler` now stores the `Schedule` it builds.** The UML shows `Scheduler *-- Schedule : produces` as a composition, but the original skeleton only *returned* a `Schedule` from `build_schedule()` without keeping a reference. `Scheduler` now keeps `self.schedule`, so `explain()` has something to describe after the fact.
+- **`Scheduler`'s task list now defaults to the owner's tasks.** The constructor originally defaulted `tasks` to an empty list when none was passed, which could quietly desync from what the owner's pets actually need. It now defaults to `owner.get_all_tasks()`, while still accepting an explicit list so the scheduling algorithm can be unit-tested without building a full `Owner`/`Pet` graph.
 
 ---
 
