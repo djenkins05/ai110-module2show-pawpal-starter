@@ -3,59 +3,57 @@ from __future__ import annotations
 from pawpal_system import CareTask, Owner, Pet, Scheduler
 
 
-def _prompt_int(prompt: str) -> int:
-    while True:
-        try:
-            return int(input(prompt))
-        except ValueError:
-            print("Please enter a whole number.")
+def build_demo_owner() -> Owner:
+    owner = Owner(name="Dana", available_minutes=60, preferred_start_time="08:00")
+
+    biscuit = Pet(name="Biscuit", species="Golden Retriever")
+    biscuit.add_task(CareTask(title="Morning walk", duration_minutes=30, priority="high"))
+    biscuit.add_task(CareTask(title="Feeding", duration_minutes=10, priority="high"))
+
+    whiskers = Pet(name="Whiskers", species="Cat")
+    whiskers.add_task(CareTask(title="Litter box cleaning", duration_minutes=15, priority="medium"))
+    whiskers.add_task(CareTask(title="Playtime", duration_minutes=20, priority="low"))
+
+    owner.add_pet(biscuit)
+    owner.add_pet(whiskers)
+    return owner
 
 
-def _add_tasks(pet: Pet) -> None:
-    print(f"\nAdd care tasks for {pet.name} (leave title blank to stop):")
-    while True:
-        title = input("  Task title: ").strip()
-        if not title:
-            break
-        duration = _prompt_int("  Duration (minutes): ")
-        priority = input("  Priority (low/medium/high): ").strip().lower()
-        try:
-            pet.add_task(CareTask(title=title, duration_minutes=duration, priority=priority))
-        except ValueError as exc:
-            print(f"  {exc}")
+def print_todays_schedule(scheduler: Scheduler) -> None:
+    schedule = scheduler.schedule
+    budget = scheduler.owner.get_time_budget()
 
+    print("=== Today's Schedule ===")
+    if schedule.scheduled_tasks:
+        for scheduled in schedule.scheduled_tasks:
+            task = scheduled.task
+            start = scheduled.start_time.strftime("%H:%M")
+            end = scheduled.end_time.strftime("%H:%M")
+            pet = f" for {task.pet_name}" if task.pet_name else ""
+            print(f"  {start}-{end}  {task.title}{pet} ({task.duration_minutes} min, {task.priority} priority)")
+    else:
+        print("  No tasks fit today's schedule.")
 
-def _add_pets(owner: Owner) -> None:
-    print("\nAdd pets (leave name blank to stop):")
-    while True:
-        name = input("  Pet name: ").strip()
-        if not name:
-            break
-        species = input("  Species: ").strip()
-        pet = Pet(name=name, species=species)
-        _add_tasks(pet)
-        owner.add_pet(pet)
+    if schedule.skipped_tasks:
+        print("\nSkipped (not enough time left):")
+        for task in schedule.skipped_tasks:
+            pet = f" for {task.pet_name}" if task.pet_name else ""
+            print(f"  {task.title}{pet} ({task.duration_minutes} min, {task.priority} priority)")
+
+    print(
+        f"\nTime used: {schedule.total_minutes_used}/{budget} min "
+        f"({schedule.time_remaining(budget)} min remaining)"
+    )
 
 
 def main() -> None:
-    print("=== PawPal+ CLI ===")
-    name = input("Owner name: ").strip()
-    available_minutes = _prompt_int("Available minutes today: ")
-    preferred_start_time = input("Preferred start time (HH:MM, 24h): ").strip()
-
-    owner = Owner(
-        name=name,
-        available_minutes=available_minutes,
-        preferred_start_time=preferred_start_time,
-    )
-    _add_pets(owner)
-
+    owner = build_demo_owner()
     scheduler = Scheduler(owner)
     scheduler.build_schedule()
 
-    print("\n=== Schedule ===")
-    print(scheduler.schedule.summary())
-    print("\n=== Explanation ===")
+    print_todays_schedule(scheduler)
+
+    print("\n=== Why this plan? ===")
     print(scheduler.explain())
 
 
