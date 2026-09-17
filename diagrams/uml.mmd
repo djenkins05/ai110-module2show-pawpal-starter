@@ -22,8 +22,13 @@ classDiagram
         -str title
         -int duration_minutes
         -str priority
+        -str frequency
+        -bool completed
+        -date completed_at
         -str pet_name
         +priority_weight() int
+        +mark_complete(today: date) void
+        +rollover(today: date) void
         +__str__() str
     }
 
@@ -48,6 +53,7 @@ classDiagram
         -Schedule schedule
         +build_schedule() Schedule
         +sort_by_priority() list~CareTask~
+        +mark_task_complete(task: CareTask) void
         +explain() str
     }
 
