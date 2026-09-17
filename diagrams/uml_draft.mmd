@@ -1,0 +1,50 @@
+classDiagram
+    class Owner {
+        -str name
+        -int available_minutes
+        -str preferred_start_time
+        -list~Pet~ pets
+        +add_pet(pet: Pet) void
+        +get_all_tasks() list~CareTask~
+        +get_time_budget() int
+    }
+
+    class Pet {
+        -str name
+        -str species
+        -list~CareTask~ tasks
+        +add_task(task: CareTask) void
+        +remove_task(task: CareTask) void
+        +get_tasks() list~CareTask~
+    }
+
+    class CareTask {
+        -str title
+        -int duration_minutes
+        -str priority
+        +priority_weight() int
+        +__str__() str
+    }
+
+    class Schedule {
+        -list~ScheduledTask~ scheduled_tasks
+        -list~CareTask~ skipped_tasks
+        -int total_minutes_used
+        +add_scheduled_task(task: CareTask, start: time) void
+        +time_remaining(budget: int) int
+        +summary() str
+    }
+
+    class Scheduler {
+        -Owner owner
+        -list~CareTask~ tasks
+        +build_schedule() Schedule
+        +sort_by_priority() list~CareTask~
+        +explain() str
+    }
+
+    Owner *-- Pet : owns
+    Pet *-- CareTask : owns
+    Scheduler o-- Owner : references
+    Scheduler *-- Schedule : produces
+    Schedule o-- CareTask : references
