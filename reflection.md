@@ -54,6 +54,17 @@ Yes — a few changes came out of reviewing the class skeletons against the orig
 - Describe one tradeoff your scheduler makes.
 - Why is that tradeoff reasonable for this scenario?
 
+`Scheduler.detect_time_conflicts()` only checks whether two tasks share the *exact same* `preferred_time` string (e.g. two tasks both set to `"07:00"`). It does not check whether their time **windows** actually overlap — a 30-minute walk starting at 07:00 and a 10-minute feeding starting at 07:15 both occupy
+07:15, but the exact-match check won't flag them, because their
+`preferred_time` values ("07:00" vs "07:15") don't match.
+
+A full overlap check would compare every pair of tasks' `[start, start + duration)` ranges (an `O(n²)` scan, or `O(n log n)` with a sort-and-sweep), and it would also have to decide what to do about tasks with no fixed time at all, since those get placed wherever the greedy scheduler finds room. The exact-match version, by contrast, is a single pass that groups tasks into a
+dict keyed by parsed time (`O(n)`), and its output is trivial to read: "these tasks want the *same* time," full stop — no minute-level interval math for the pet owner to interpret.
+
+For PawPal+'s scale (a handful of tasks per pet per day, entered by hand), this tradeoff is reasonable: exact matches already catch the most common real mistake (re-adding a task at a time you already used, or two pets needing attention at once), it can never throw an exception since it just returns an
+empty list when nothing collides, and the added complexity of true interval overlap detection isn't yet justified by how the app is actually used. If tasks start getting entered with tightly packed, slightly-offset times, this would be the first piece of scheduling logic worth upgrading to real interval
+overlap checking.
+
 ---
 
 ## 3. AI Collaboration

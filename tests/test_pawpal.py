@@ -57,7 +57,7 @@ def test_filter_tasks_by_pet_and_status():
     ]
 
 
-def test_completing_daily_task_creates_next_pending_occurrence():
+def test_completing_daily_task_creates_next_occurrence_due_tomorrow():
     pet = Pet(name="Rex", species="dog")
     feed = CareTask(title="Feed", duration_minutes=5, priority="medium", frequency="daily")
     pet.add_task(feed)
@@ -71,8 +71,45 @@ def test_completing_daily_task_creates_next_pending_occurrence():
     assert next_task.title == "Feed"
     assert next_task.frequency == "daily"
     assert next_task.pet_name == "Rex"
+    assert next_task.due_date == date(2026, 1, 2)
     assert [task.title for task in pet.get_tasks()] == ["Feed", "Feed"]
     assert [task.completed for task in pet.get_tasks()] == [True, False]
+
+
+def test_completing_weekly_task_creates_next_occurrence_due_in_a_week():
+    pet = Pet(name="Rex", species="dog")
+    groom = CareTask(title="Grooming", duration_minutes=30, priority="low", frequency="weekly")
+    pet.add_task(groom)
+
+    next_task = pet.complete_task(groom, today=date(2026, 1, 1))
+
+    assert next_task.due_date == date(2026, 1, 8)
+
+
+def test_is_due_gates_pending_task_until_its_due_date():
+    task = CareTask(
+        title="Feed", duration_minutes=5, priority="medium", due_date=date(2026, 1, 2)
+    )
+
+    assert task.is_due(today=date(2026, 1, 1)) is False
+    assert task.is_due(today=date(2026, 1, 2)) is True
+    assert task.is_due(today=date(2026, 1, 3)) is True
+
+
+def test_build_schedule_excludes_task_not_yet_due():
+    owner = Owner(name="Jordan", available_minutes=60, preferred_start_time="09:00")
+    pet = Pet(name="Rex", species="dog")
+    owner.add_pet(pet)
+    not_due = CareTask(
+        title="Feed", duration_minutes=10, priority="high", due_date=date(2999, 1, 1)
+    )
+    pet.add_task(not_due)
+    scheduler = Scheduler(owner)
+
+    schedule = scheduler.build_schedule()
+
+    assert schedule.scheduled_tasks == []
+    assert schedule.not_due_tasks == [not_due]
 
 
 def test_completing_one_time_task_creates_no_next_occurrence():
@@ -159,3 +196,34 @@ def test_detect_duplicate_tasks_ignores_completed_task():
     pet.add_task(pending_walk)
 
     assert owner.detect_duplicate_tasks() == []
+
+
+def test_detect_time_conflicts_flags_cross_pet_same_time():
+    owner = Owner(name="Jordan", available_minutes=60, preferred_start_time="09:00")
+    dog = Pet(name="Rex", species="dog")
+    cat = Pet(name="Momo", species="cat")
+    owner.add_pet(dog)
+    owner.add_pet(cat)
+    dog.add_task(CareTask(title="Walk", duration_minutes=15, priority="high", preferred_time="07:00"))
+    cat.add_task(
+        CareTask(title="Feed cat", duration_minutes=5, priority="high", preferred_time="07:00")
+    )
+    scheduler = Scheduler(owner)
+
+    warnings = scheduler.detect_time_conflicts()
+
+    assert len(warnings) == 1
+    assert "07:00" in warnings[0]
+    assert "Walk" in warnings[0] and "Feed cat" in warnings[0]
+
+
+def test_detect_time_conflicts_returns_empty_list_when_no_overlap():
+    owner = Owner(name="Jordan", available_minutes=60, preferred_start_time="09:00")
+    pet = Pet(name="Rex", species="dog")
+    owner.add_pet(pet)
+    pet.add_task(CareTask(title="Walk", duration_minutes=15, priority="high", preferred_time="07:00"))
+    pet.add_task(CareTask(title="Feed", duration_minutes=5, priority="high", preferred_time="18:00"))
+    pet.add_task(CareTask(title="Play", duration_minutes=10, priority="low"))
+    scheduler = Scheduler(owner)
+
+    assert scheduler.detect_time_conflicts() == []

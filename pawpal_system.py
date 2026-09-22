@@ -40,11 +40,15 @@ class CareTask:
     # Optional preferred time of day for this task, e.g. "07:30" or "7:30 AM".
     # None means the task has no fixed time and can be scheduled whenever.
     preferred_time: str | None = None
+    # Set on tasks created by create_next_occurrence(); the task isn't
+    # considered due (see is_due()) until this date. None means no gating.
+    due_date: date | None = None
 
     PRIORITY_WEIGHTS: ClassVar[dict[str, int]] = {"low": 1, "medium": 2, "high": 3}
-    # "once" tasks never recur; "daily"/"weekly" tasks spawn a next occurrence
-    # when completed (see create_next_occurrence()).
+    # "once" tasks never recur. Daily/weekly tasks spawn a next occurrence
+    # when completed (see create_next_occurrence()), due this many days later.
     VALID_FREQUENCIES: ClassVar[set[str]] = {"once", "daily", "weekly"}
+    FREQUENCY_INTERVALS: ClassVar[dict[str, int]] = {"daily": 1, "weekly": 7}
 
     def __post_init__(self) -> None:
         """Normalize and validate the priority and frequency fields."""
@@ -71,21 +75,29 @@ class CareTask:
         self.completed_at = today or date.today()
 
     def create_next_occurrence(self) -> CareTask | None:
-        """Return a fresh pending CareTask for this task's next occurrence, or None if it doesn't recur.
+        """Return a fresh CareTask for this task's next occurrence, or None if it doesn't recur.
 
         This completed instance is left as-is (a historical record); the
-        returned task is a brand-new pending instance the caller should add
-        to the relevant pet's task list.
+        returned task is a brand-new instance, due today + the frequency's
+        interval (e.g. +1 day for "daily", +7 for "weekly"), that the caller
+        should add to the relevant pet's task list.
         """
         if self.frequency == "once":
             return None
+        interval_days = self.FREQUENCY_INTERVALS[self.frequency]
+        due_date = (self.completed_at or date.today()) + timedelta(days=interval_days)
         return CareTask(
             title=self.title,
             duration_minutes=self.duration_minutes,
             priority=self.priority,
             frequency=self.frequency,
             preferred_time=self.preferred_time,
+            due_date=due_date,
         )
+
+    def is_due(self, today: date | None = None) -> bool:
+        """Return True if this task has no due date, or its due date has arrived."""
+        return self.due_date is None or self.due_date <= (today or date.today())
 
     def __str__(self) -> str:
         """Return a human-readable summary of the task."""
@@ -147,12 +159,19 @@ class Owner:
     def filter_tasks(
         self, pet_name: str | None = None, completed: bool | None = None
     ) -> list[CareTask]:
-        """Return tasks across all pets, optionally narrowed by pet name and/or completion status."""
+        """Return tasks across all pets, optionally narrowed by pet name and/or completion status.
+
+        Requesting completed=False excludes tasks whose due_date hasn't
+        arrived yet (see CareTask.is_due()) — a recurring task's next
+        occurrence isn't "pending" until it's actually due.
+        """
         tasks = self.get_all_tasks()
         if pet_name is not None:
             tasks = [task for task in tasks if task.pet_name == pet_name]
         if completed is not None:
             tasks = [task for task in tasks if task.completed == completed]
+            if completed is False:
+                tasks = [task for task in tasks if task.is_due()]
         return tasks
 
     def detect_duplicate_tasks(self) -> list[tuple[CareTask, CareTask]]:
@@ -179,6 +198,10 @@ class ScheduledTask:
 class Schedule:
     scheduled_tasks: list[ScheduledTask] = field(default_factory=list)
     skipped_tasks: list[CareTask] = field(default_factory=list)
+    # Pending tasks whose due_date hasn't arrived yet (see CareTask.is_due()),
+    # kept separate from skipped_tasks since they weren't excluded for lack
+    # of time.
+    not_due_tasks: list[CareTask] = field(default_factory=list)
     total_minutes_used: int = 0
 
     def add_scheduled_task(self, task: CareTask, start: time) -> None:
@@ -213,6 +236,13 @@ class Schedule:
         else:
             lines.append("  (none)")
 
+        lines.append(f"Not yet due ({len(self.not_due_tasks)}):")
+        if self.not_due_tasks:
+            for task in self.not_due_tasks:
+                lines.append(f"  {task} (due {task.due_date})")
+        else:
+            lines.append("  (none)")
+
         return "\n".join(lines)
 
 
@@ -236,6 +266,9 @@ class Scheduler:
         schedule = Schedule()
         for task in self.sort_by_priority():
             if task.completed:
+                continue
+            if not task.is_due():
+                schedule.not_due_tasks.append(task)
                 continue
             if schedule.total_minutes_used + task.duration_minutes <= budget:
                 schedule.add_scheduled_task(task, current_time)
@@ -262,13 +295,44 @@ class Scheduler:
             key=lambda task: _parse_time(task.preferred_time) if task.preferred_time else time.max,
         )
 
+    def detect_time_conflicts(self) -> list[str]:
+        """Return one human-readable warning per group of tasks that want the same preferred_time.
+
+        This is a deliberately lightweight check: it groups tasks by an
+        exact preferred_time match (same pet or not) rather than computing
+        whether their [start, start + duration) windows overlap. It never
+        raises — an empty list just means no conflicts were found — so a
+        caller can safely show these as warnings without crashing the
+        scheduling flow. See reflection.md, section 2b, for why this
+        exact-match tradeoff is acceptable here.
+        """
+        groups: dict[time, list[CareTask]] = {}
+        for task in self.tasks:
+            if task.preferred_time is None:
+                continue
+            groups.setdefault(_parse_time(task.preferred_time), []).append(task)
+
+        warnings: list[str] = []
+        for moment, group in sorted(groups.items()):
+            if len(group) < 2:
+                continue
+            names = ", ".join(f"'{task.title}' ({task.pet_name or 'unassigned'})" for task in group)
+            warnings.append(f"Conflict at {moment.strftime('%H:%M')}: {names} are all scheduled at the same time.")
+        return warnings
+
     def filter_tasks(
         self, completed: bool | None = None, pet_name: str | None = None
     ) -> list[CareTask]:
-        """Return this scheduler's tasks narrowed by completion status and/or pet name."""
+        """Return this scheduler's tasks narrowed by completion status and/or pet name.
+
+        Requesting completed=False excludes tasks that aren't due yet (see
+        CareTask.is_due()).
+        """
         tasks = self.tasks
         if completed is not None:
             tasks = [task for task in tasks if task.completed == completed]
+            if completed is False:
+                tasks = [task for task in tasks if task.is_due()]
         if pet_name is not None:
             tasks = [task for task in tasks if task.pet_name == pet_name]
         return tasks
@@ -307,4 +371,6 @@ class Scheduler:
                 f"Skipped '{task.title}' — not enough time remaining "
                 f"(needed {task.duration_minutes} min)"
             )
+        for task in self.schedule.not_due_tasks:
+            lines.append(f"Skipped '{task.title}' — not due until {task.due_date}")
         return "\n".join(lines) if lines else "No tasks to schedule."

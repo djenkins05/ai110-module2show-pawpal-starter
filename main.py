@@ -31,6 +31,11 @@ def build_demo_owner() -> Owner:
             completed=True,
         )
     )
+    # Same preferred_time as Biscuit's "Morning walk" above, on purpose, so
+    # detect_time_conflicts() has a real cross-pet conflict to report.
+    whiskers.add_task(
+        CareTask(title="Medication", duration_minutes=5, priority="high", preferred_time="07:00")
+    )
 
     owner.add_pet(biscuit)
     owner.add_pet(whiskers)
@@ -85,6 +90,16 @@ def print_filtered_tasks(scheduler: Scheduler) -> None:
         print("  (none)")
 
 
+def print_time_conflicts(scheduler: Scheduler) -> None:
+    print("\n=== Conflict check ===")
+    conflicts = scheduler.detect_time_conflicts()
+    if conflicts:
+        for warning in conflicts:
+            print(f"  WARNING: {warning}")
+    else:
+        print("  No conflicts found.")
+
+
 def main() -> None:
     owner = build_demo_owner()
     scheduler = Scheduler(owner)
@@ -98,6 +113,7 @@ def main() -> None:
     print()
     print_sorted_by_time(scheduler)
     print_filtered_tasks(scheduler)
+    print_time_conflicts(scheduler)
 
 
 if __name__ == "__main__":

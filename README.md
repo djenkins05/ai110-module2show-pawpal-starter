@@ -82,14 +82,12 @@ Sample test output:
 
 ## 📐 Smarter Scheduling
 
-> Fill in once you've implemented scheduling logic.
-
 | Feature | Method(s) | Notes |
 |---------|-----------|-------|
-| Task sorting | | e.g., by priority, duration |
-| Filtering | | e.g., skip tasks if time runs out |
-| Conflict handling | | e.g., overlapping time slots |
-| Recurring tasks | | e.g., daily vs. weekly |
+| Sorting | `Scheduler.sort_by_priority()`, `Scheduler.sort_by_time()` | `sort_by_priority()` orders tasks highest-to-lowest by `CareTask.priority_weight()`. `sort_by_time()` orders tasks by their optional `preferred_time` (`"HH:MM"`/`"H:MM AM/PM"`, parsed with `_parse_time()`); tasks with no preferred time sort last. |
+| Filtering | `Owner.filter_tasks(pet_name=None, completed=None)`, `Scheduler.filter_tasks(completed=None, pet_name=None)` | Narrows a task list by pet name and/or completion status. Requesting `completed=False` also excludes tasks that aren't due yet (see recurring tasks below), so "pending" only means tasks actually actionable today. |
+| Conflict detection | `Scheduler.detect_time_conflicts()`, `Owner.detect_duplicate_tasks()` | `detect_time_conflicts()` groups tasks by exact `preferred_time` match and returns a list of warning strings (never raises) when two tasks — for the same pet or different pets — want the same time. `detect_duplicate_tasks()` separately flags pending tasks for the same pet that share a title, in case the same chore got added twice. See `reflection.md` (section 2b) for the exact-match-vs-overlap tradeoff behind `detect_time_conflicts()`. |
+| Recurring tasks | `CareTask.create_next_occurrence()`, `Pet.complete_task()`, `CareTask.is_due()` | Completing a `"daily"`/`"weekly"` task (via `Pet.complete_task()` or `Scheduler.mark_task_complete()`) leaves that instance completed as history and creates a brand-new pending `CareTask` due `today + 1 day` (daily) or `+ 7 days` (weekly). `CareTask.is_due()` gates scheduling/filtering so that new instance isn't treated as pending until its due date arrives. |
 
 ## 📸 Demo Walkthrough
 
