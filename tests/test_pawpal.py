@@ -1,4 +1,6 @@
-from pawpal_system import CareTask, Pet
+from datetime import date, time
+
+from pawpal_system import CareTask, Owner, Pet, Schedule, ScheduledTask, Scheduler
 
 
 def test_mark_complete_changes_status():
@@ -17,3 +19,143 @@ def test_adding_task_increases_pet_task_count():
     pet.add_task(CareTask(title="Walk", duration_minutes=15, priority="high"))
 
     assert len(pet.get_tasks()) == 1
+
+
+def test_scheduled_tasks_sorted_by_time_out_of_insertion_order():
+    schedule = Schedule()
+    late_task = CareTask(title="Dinner", duration_minutes=10, priority="medium")
+    early_task = CareTask(title="Breakfast", duration_minutes=10, priority="medium")
+    schedule.scheduled_tasks.append(
+        ScheduledTask(task=late_task, start_time=time(18, 0), end_time=time(18, 10))
+    )
+    schedule.scheduled_tasks.append(
+        ScheduledTask(task=early_task, start_time=time(8, 0), end_time=time(8, 10))
+    )
+
+    ordered = schedule.get_scheduled_tasks_sorted_by_time()
+
+    assert [scheduled.task.title for scheduled in ordered] == ["Breakfast", "Dinner"]
+
+
+def test_filter_tasks_by_pet_and_status():
+    owner = Owner(name="Jordan", available_minutes=60, preferred_start_time="09:00")
+    dog = Pet(name="Rex", species="dog")
+    cat = Pet(name="Momo", species="cat")
+    owner.add_pet(dog)
+    owner.add_pet(cat)
+
+    walk = CareTask(title="Walk", duration_minutes=15, priority="high")
+    walk.mark_complete()
+    dog.add_task(walk)
+    dog.add_task(CareTask(title="Feed", duration_minutes=5, priority="medium"))
+    cat.add_task(CareTask(title="Litter box", duration_minutes=5, priority="low"))
+
+    assert [task.title for task in owner.filter_tasks(pet_name="Rex")] == ["Walk", "Feed"]
+    assert [task.title for task in owner.filter_tasks(completed=True)] == ["Walk"]
+    assert [task.title for task in owner.filter_tasks(pet_name="Momo", completed=False)] == [
+        "Litter box"
+    ]
+
+
+def test_completing_daily_task_creates_next_pending_occurrence():
+    pet = Pet(name="Rex", species="dog")
+    feed = CareTask(title="Feed", duration_minutes=5, priority="medium", frequency="daily")
+    pet.add_task(feed)
+
+    next_task = pet.complete_task(feed, today=date(2026, 1, 1))
+
+    assert feed.completed is True
+    assert next_task is not None
+    assert next_task is not feed
+    assert next_task.completed is False
+    assert next_task.title == "Feed"
+    assert next_task.frequency == "daily"
+    assert next_task.pet_name == "Rex"
+    assert [task.title for task in pet.get_tasks()] == ["Feed", "Feed"]
+    assert [task.completed for task in pet.get_tasks()] == [True, False]
+
+
+def test_completing_one_time_task_creates_no_next_occurrence():
+    pet = Pet(name="Rex", species="dog")
+    vet_visit = CareTask(title="Vet visit", duration_minutes=30, priority="high", frequency="once")
+    pet.add_task(vet_visit)
+
+    next_task = pet.complete_task(vet_visit)
+
+    assert next_task is None
+    assert len(pet.get_tasks()) == 1
+
+
+def test_scheduler_mark_task_complete_adds_next_occurrence_to_owner_and_scheduler():
+    owner = Owner(name="Jordan", available_minutes=60, preferred_start_time="09:00")
+    pet = Pet(name="Rex", species="dog")
+    walk = CareTask(title="Walk", duration_minutes=15, priority="high", frequency="weekly")
+    pet.add_task(walk)
+    owner.add_pet(pet)
+    scheduler = Scheduler(owner)
+
+    next_task = scheduler.mark_task_complete(walk)
+
+    assert next_task is not None
+    assert next_task in pet.get_tasks()
+    assert next_task in scheduler.tasks
+    assert len(scheduler.tasks) == 2
+
+
+def test_detect_duplicate_tasks_flags_same_title_same_pet():
+    owner = Owner(name="Jordan", available_minutes=60, preferred_start_time="09:00")
+    pet = Pet(name="Rex", species="dog")
+    owner.add_pet(pet)
+
+    first_walk = CareTask(title="Walk", duration_minutes=15, priority="high")
+    second_walk = CareTask(title="walk", duration_minutes=20, priority="medium")
+    pet.add_task(first_walk)
+    pet.add_task(second_walk)
+    pet.add_task(CareTask(title="Feed", duration_minutes=5, priority="low"))
+
+    conflicts = owner.detect_duplicate_tasks()
+
+    assert conflicts == [(first_walk, second_walk)]
+
+
+def test_scheduler_sort_by_time_orders_tasks_added_out_of_order():
+    owner = Owner(name="Jordan", available_minutes=60, preferred_start_time="09:00")
+    tasks = [
+        CareTask(title="Dinner", duration_minutes=10, priority="medium", preferred_time="18:00"),
+        CareTask(title="Breakfast", duration_minutes=10, priority="medium", preferred_time="07:00"),
+        CareTask(title="Lunch", duration_minutes=10, priority="medium", preferred_time="12:00"),
+        CareTask(title="No fixed time", duration_minutes=5, priority="low"),
+    ]
+    scheduler = Scheduler(owner, tasks=tasks)
+
+    ordered = scheduler.sort_by_time()
+
+    assert [task.title for task in ordered] == ["Breakfast", "Lunch", "Dinner", "No fixed time"]
+
+
+def test_scheduler_filter_tasks_by_status_and_pet():
+    owner = Owner(name="Jordan", available_minutes=60, preferred_start_time="09:00")
+    pet = Pet(name="Rex", species="dog")
+    walk = CareTask(title="Walk", duration_minutes=15, priority="high")
+    walk.mark_complete()
+    pet.add_task(walk)
+    pet.add_task(CareTask(title="Feed", duration_minutes=5, priority="medium"))
+    scheduler = Scheduler(owner, tasks=pet.get_tasks())
+
+    assert [task.title for task in scheduler.filter_tasks(completed=True)] == ["Walk"]
+    assert [task.title for task in scheduler.filter_tasks(pet_name="Rex")] == ["Walk", "Feed"]
+    assert scheduler.filter_tasks(completed=False, pet_name="Rex")[0].title == "Feed"
+
+
+def test_detect_duplicate_tasks_ignores_completed_task():
+    owner = Owner(name="Jordan", available_minutes=60, preferred_start_time="09:00")
+    pet = Pet(name="Rex", species="dog")
+    owner.add_pet(pet)
+
+    done_walk = CareTask(title="Walk", duration_minutes=15, priority="high")
+    done_walk.mark_complete()
+    pending_walk = CareTask(title="Walk", duration_minutes=15, priority="high")
+    pet.add_task(done_walk)
+    pet.add_task(pending_walk)
+
+    assert owner.detect_duplicate_tasks() == []

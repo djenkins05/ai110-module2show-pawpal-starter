@@ -7,12 +7,30 @@ def build_demo_owner() -> Owner:
     owner = Owner(name="Dana", available_minutes=60, preferred_start_time="08:00")
 
     biscuit = Pet(name="Biscuit", species="Golden Retriever")
-    biscuit.add_task(CareTask(title="Morning walk", duration_minutes=30, priority="high"))
-    biscuit.add_task(CareTask(title="Feeding", duration_minutes=10, priority="high"))
+    # Tasks are added out of time order on purpose, to prove sort_by_time()
+    # actually sorts rather than just echoing insertion order.
+    biscuit.add_task(
+        CareTask(title="Feeding", duration_minutes=10, priority="high", preferred_time="18:00")
+    )
+    biscuit.add_task(
+        CareTask(title="Morning walk", duration_minutes=30, priority="high", preferred_time="07:00")
+    )
 
     whiskers = Pet(name="Whiskers", species="Cat")
-    whiskers.add_task(CareTask(title="Litter box cleaning", duration_minutes=15, priority="medium"))
-    whiskers.add_task(CareTask(title="Playtime", duration_minutes=20, priority="low"))
+    whiskers.add_task(
+        CareTask(
+            title="Playtime", duration_minutes=20, priority="low", preferred_time="09:30"
+        )
+    )
+    whiskers.add_task(
+        CareTask(
+            title="Litter box cleaning",
+            duration_minutes=15,
+            priority="medium",
+            preferred_time="12:00",
+            completed=True,
+        )
+    )
 
     owner.add_pet(biscuit)
     owner.add_pet(whiskers)
@@ -46,6 +64,27 @@ def print_todays_schedule(scheduler: Scheduler) -> None:
     )
 
 
+def print_sorted_by_time(scheduler: Scheduler) -> None:
+    print("=== Tasks sorted by preferred time ===")
+    for task in scheduler.sort_by_time():
+        when = task.preferred_time or "no preferred time"
+        print(f"  {when:>8}  {task.title} for {task.pet_name}")
+
+
+def print_filtered_tasks(scheduler: Scheduler) -> None:
+    print("\n=== Filter: pending tasks for Biscuit ===")
+    for task in scheduler.filter_tasks(completed=False, pet_name="Biscuit"):
+        print(f"  {task.title} ({task.priority} priority)")
+
+    print("\n=== Filter: completed tasks (any pet) ===")
+    completed = scheduler.filter_tasks(completed=True)
+    if completed:
+        for task in completed:
+            print(f"  {task.title} for {task.pet_name}")
+    else:
+        print("  (none)")
+
+
 def main() -> None:
     owner = build_demo_owner()
     scheduler = Scheduler(owner)
@@ -55,6 +94,10 @@ def main() -> None:
 
     print("\n=== Why this plan? ===")
     print(scheduler.explain())
+
+    print()
+    print_sorted_by_time(scheduler)
+    print_filtered_tasks(scheduler)
 
 
 if __name__ == "__main__":
