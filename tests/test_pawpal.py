@@ -1,5 +1,7 @@
 from datetime import date, time
 
+import pytest
+
 from pawpal_system import CareTask, Owner, Pet, Schedule, ScheduledTask, Scheduler
 
 
@@ -227,3 +229,121 @@ def test_detect_time_conflicts_returns_empty_list_when_no_overlap():
     scheduler = Scheduler(owner)
 
     assert scheduler.detect_time_conflicts() == []
+
+
+def test_build_schedule_happy_path_schedules_multiple_tasks_across_pets_by_priority():
+    owner = Owner(name="Jordan", available_minutes=120, preferred_start_time="09:00")
+    dog = Pet(name="Rex", species="dog")
+    cat = Pet(name="Momo", species="cat")
+    owner.add_pet(dog)
+    owner.add_pet(cat)
+    dog.add_task(CareTask(title="Walk", duration_minutes=30, priority="high"))
+    cat.add_task(CareTask(title="Feed", duration_minutes=20, priority="medium"))
+    dog.add_task(CareTask(title="Play", duration_minutes=10, priority="low"))
+    scheduler = Scheduler(owner)
+
+    schedule = scheduler.build_schedule()
+
+    assert [scheduled.task.title for scheduled in schedule.scheduled_tasks] == ["Walk", "Feed", "Play"]
+    assert schedule.skipped_tasks == []
+    assert schedule.not_due_tasks == []
+    assert schedule.total_minutes_used == 60
+    assert schedule.scheduled_tasks[0].start_time == time(9, 0)
+    assert schedule.scheduled_tasks[1].start_time == time(9, 30)
+    assert schedule.scheduled_tasks[2].start_time == time(9, 50)
+
+
+def test_pet_with_no_tasks_produces_empty_schedule():
+    owner = Owner(name="Jordan", available_minutes=60, preferred_start_time="09:00")
+    pet = Pet(name="Rex", species="dog")
+    owner.add_pet(pet)
+    assert pet.get_tasks() == []
+    scheduler = Scheduler(owner)
+
+    schedule = scheduler.build_schedule()
+
+    assert schedule.scheduled_tasks == []
+    assert schedule.skipped_tasks == []
+    assert schedule.total_minutes_used == 0
+
+
+def test_owner_with_no_pets_has_no_tasks_and_no_duplicate_conflicts():
+    owner = Owner(name="Jordan", available_minutes=60, preferred_start_time="09:00")
+
+    assert owner.get_all_tasks() == []
+    assert owner.detect_duplicate_tasks() == []
+
+
+def test_two_tasks_at_exact_same_preferred_time_on_same_pet_flagged_as_conflict():
+    owner = Owner(name="Jordan", available_minutes=60, preferred_start_time="09:00")
+    pet = Pet(name="Rex", species="dog")
+    owner.add_pet(pet)
+    pet.add_task(CareTask(title="Walk", duration_minutes=15, priority="high", preferred_time="07:00"))
+    pet.add_task(CareTask(title="Brush", duration_minutes=5, priority="low", preferred_time="07:00"))
+    scheduler = Scheduler(owner)
+
+    warnings = scheduler.detect_time_conflicts()
+
+    assert len(warnings) == 1
+    assert "Walk" in warnings[0] and "Brush" in warnings[0]
+
+
+def test_build_schedule_task_exactly_filling_budget_is_included_boundary():
+    owner = Owner(name="Jordan", available_minutes=30, preferred_start_time="09:00")
+    pet = Pet(name="Rex", species="dog")
+    owner.add_pet(pet)
+    exact_fit = CareTask(title="Groom", duration_minutes=30, priority="high")
+    overflow = CareTask(title="Play", duration_minutes=5, priority="low")
+    pet.add_task(exact_fit)
+    pet.add_task(overflow)
+    scheduler = Scheduler(owner)
+
+    schedule = scheduler.build_schedule()
+
+    assert [scheduled.task.title for scheduled in schedule.scheduled_tasks] == ["Groom"]
+    assert schedule.total_minutes_used == 30
+    assert [task.title for task in schedule.skipped_tasks] == ["Play"]
+
+
+def test_build_schedule_with_zero_available_minutes_skips_everything():
+    owner = Owner(name="Jordan", available_minutes=0, preferred_start_time="09:00")
+    pet = Pet(name="Rex", species="dog")
+    owner.add_pet(pet)
+    task = CareTask(title="Feed", duration_minutes=5, priority="high")
+    pet.add_task(task)
+    scheduler = Scheduler(owner)
+
+    schedule = scheduler.build_schedule()
+
+    assert schedule.scheduled_tasks == []
+    assert schedule.skipped_tasks == [task]
+    assert schedule.total_minutes_used == 0
+
+
+def test_sort_by_priority_ties_preserve_insertion_order():
+    owner = Owner(name="Jordan", available_minutes=60, preferred_start_time="09:00")
+    tasks = [
+        CareTask(title="A", duration_minutes=5, priority="medium"),
+        CareTask(title="B", duration_minutes=5, priority="medium"),
+        CareTask(title="C", duration_minutes=5, priority="medium"),
+    ]
+    scheduler = Scheduler(owner, tasks=tasks)
+
+    ordered = scheduler.sort_by_priority()
+
+    assert [task.title for task in ordered] == ["A", "B", "C"]
+
+
+def test_care_task_rejects_unknown_priority():
+    with pytest.raises(ValueError):
+        CareTask(title="Bad", duration_minutes=5, priority="urgent")
+
+
+def test_care_task_rejects_unknown_frequency():
+    with pytest.raises(ValueError):
+        CareTask(title="Bad", duration_minutes=5, priority="low", frequency="monthly")
+
+
+def test_care_task_rejects_unparseable_preferred_time():
+    with pytest.raises(ValueError):
+        CareTask(title="Bad", duration_minutes=5, priority="low", preferred_time="not a time")
