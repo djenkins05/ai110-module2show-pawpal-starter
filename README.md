@@ -22,6 +22,17 @@ Your final app should:
 - Display the plan clearly (and ideally explain the reasoning)
 - Include tests for the most important scheduling behaviors
 
+## ✨ Features
+
+- **Priority-based scheduling** — `Scheduler.build_schedule()` greedily fills the owner's time budget with the highest-priority pending tasks first (via `sort_by_priority()`), skipping any task that would exceed the remaining budget.
+- **Sorting by time** — `Scheduler.sort_by_time()` orders tasks by their optional `preferred_time` (`"HH:MM"` or `"H:MM AM/PM"`) instead of priority, so a day's plan can be viewed chronologically; tasks with no preferred time sort last.
+- **Conflict warnings** — `Scheduler.detect_time_conflicts()` flags any two tasks (same pet or different pets) that want the exact same `preferred_time`; `Owner.detect_duplicate_tasks()` separately flags pending tasks on the same pet that share a title, in case a chore was added twice.
+- **Daily & weekly recurrence** — completing a `"daily"`/`"weekly"` task (`Pet.complete_task()` or `Scheduler.mark_task_complete()`) leaves the completed instance as history and automatically creates a new pending occurrence due 1 day (daily) or 7 days (weekly) later.
+- **Due-date gating** — `CareTask.is_due()` keeps a freshly-created recurring occurrence out of "pending" lists and out of the schedule until its due date actually arrives.
+- **Filtering** — `Owner.filter_tasks()` and `Scheduler.filter_tasks()` narrow the task list by pet and/or completion status.
+- **Plan explanation** — `Scheduler.explain()` reports, in plain language, why each task was included or skipped (not enough time remaining, or not due yet).
+- **Interactive UI** — the Streamlit app (`app.py`) lets an owner add pets/tasks, toggle between priority/time sorting, see duplicate- and conflict-warnings inline, and generate a schedule with one click.
+
 ## Getting started
 
 ### Setup
@@ -48,19 +59,19 @@ Output from running `python main.py`:
 
 ```
 === Today's Schedule ===
-  08:00-08:30  Morning walk for Biscuit (30 min, high priority)
-  08:30-08:40  Feeding for Biscuit (10 min, high priority)
-  08:40-08:55  Litter box cleaning for Whiskers (15 min, medium priority)
+  08:00-08:10  Feeding for Biscuit (10 min, high priority)
+  08:10-08:40  Morning walk for Biscuit (30 min, high priority)
+  08:40-08:45  Medication for Whiskers (5 min, high priority)
 
 Skipped (not enough time left):
   Playtime for Whiskers (20 min, low priority)
 
-Time used: 55/60 min (5 min remaining)
+Time used: 45/60 min (15 min remaining)
 
 === Why this plan? ===
-Included 'Morning walk' at 08:00 (priority=high, weight=3)
-Included 'Feeding' at 08:30 (priority=high, weight=3)
-Included 'Litter box cleaning' at 08:40 (priority=medium, weight=2)
+Included 'Feeding' at 08:00 (priority=high, weight=3)
+Included 'Morning walk' at 08:10 (priority=high, weight=3)
+Included 'Medication' at 08:40 (priority=high, weight=3)
 Skipped 'Playtime' — not enough time remaining (needed 20 min)
 ```
 
@@ -90,31 +101,6 @@ rootdir: /Users/djenkins/Documents/GitHub/ai110-module2show-pawpal-starter
 plugins: anyio-4.15.1
 collecting ... collected 26 items
 
-tests/test_pawpal.py::test_mark_complete_changes_status PASSED           [  3%]
-tests/test_pawpal.py::test_adding_task_increases_pet_task_count PASSED   [  7%]
-tests/test_pawpal.py::test_scheduled_tasks_sorted_by_time_out_of_insertion_order PASSED [ 11%]
-tests/test_pawpal.py::test_filter_tasks_by_pet_and_status PASSED         [ 15%]
-tests/test_pawpal.py::test_completing_daily_task_creates_next_occurrence_due_tomorrow PASSED [ 19%]
-tests/test_pawpal.py::test_completing_weekly_task_creates_next_occurrence_due_in_a_week PASSED [ 23%]
-tests/test_pawpal.py::test_is_due_gates_pending_task_until_its_due_date PASSED [ 26%]
-tests/test_pawpal.py::test_build_schedule_excludes_task_not_yet_due PASSED [ 30%]
-tests/test_pawpal.py::test_completing_one_time_task_creates_no_next_occurrence PASSED [ 34%]
-tests/test_pawpal.py::test_scheduler_mark_task_complete_adds_next_occurrence_to_owner_and_scheduler PASSED [ 38%]
-tests/test_pawpal.py::test_detect_duplicate_tasks_flags_same_title_same_pet PASSED [ 42%]
-tests/test_pawpal.py::test_scheduler_sort_by_time_orders_tasks_added_out_of_order PASSED [ 46%]
-tests/test_pawpal.py::test_scheduler_filter_tasks_by_status_and_pet PASSED [ 50%]
-tests/test_pawpal.py::test_detect_duplicate_tasks_ignores_completed_task PASSED [ 53%]
-tests/test_pawpal.py::test_detect_time_conflicts_flags_cross_pet_same_time PASSED [ 57%]
-tests/test_pawpal.py::test_detect_time_conflicts_returns_empty_list_when_no_overlap PASSED [ 61%]
-tests/test_pawpal.py::test_build_schedule_happy_path_schedules_multiple_tasks_across_pets_by_priority PASSED [ 65%]
-tests/test_pawpal.py::test_pet_with_no_tasks_produces_empty_schedule PASSED [ 69%]
-tests/test_pawpal.py::test_owner_with_no_pets_has_no_tasks_and_no_duplicate_conflicts PASSED [ 73%]
-tests/test_pawpal.py::test_two_tasks_at_exact_same_preferred_time_on_same_pet_flagged_as_conflict PASSED [ 76%]
-tests/test_pawpal.py::test_build_schedule_task_exactly_filling_budget_is_included_boundary PASSED [ 80%]
-tests/test_pawpal.py::test_build_schedule_with_zero_available_minutes_skips_everything PASSED [ 84%]
-tests/test_pawpal.py::test_sort_by_priority_ties_preserve_insertion_order PASSED [ 88%]
-tests/test_pawpal.py::test_care_task_rejects_unknown_priority PASSED     [ 92%]
-tests/test_pawpal.py::test_care_task_rejects_unknown_frequency PASSED    [ 96%]
 tests/test_pawpal.py::test_care_task_rejects_unparseable_preferred_time PASSED [100%]
 
 ============================== 26 passed in 0.02s ==============================
@@ -135,12 +121,66 @@ All 26 tests pass, covering the core scheduling algorithm, sorting, filtering, r
 
 ## 📸 Demo Walkthrough
 
-Describe your app in numbered steps so a reader can follow along without watching a video:
+### Main UI features
 
-1. <!-- Describe this step -->
-2. <!-- Describe this step -->
-3. <!-- Describe this step -->
-4. <!-- Describe this step -->
-5. <!-- Add more steps as needed -->
+- **Owner setup**: enter a name, available minutes for the day, and a preferred start time.
+- **Add a Pet**: give a pet a name and species; added pets appear in a running list.
+- **Schedule a Task**: pick a pet, title, duration, priority, frequency (`once`/`daily`/`weekly`), and an optional preferred time (`HH:MM` or `H:MM AM/PM`).
+- **Current Tasks table**: a "Sort by" toggle re-orders the table live by Priority or Time; duplicate-title and same-preferred-time conflicts show up as warnings above the table as soon as they exist.
+- **Generate Schedule**: builds the day's plan and shows scheduled, skipped, and not-yet-due tasks as separate tables, plus an expandable "Why this plan?" explanation.
+
+### Example workflow
+
+1. Set up the owner (e.g., 60 available minutes, preferred start time `08:00`).
+2. Add a pet, "Biscuit" (dog).
+3. Add a task for Biscuit: "Morning walk", 30 min, high priority, preferred time `07:00`.
+4. Add a second task for Biscuit at the same preferred time (e.g., "Medication", 07:00) — a conflict warning appears immediately above the Current Tasks table, before any schedule is even built.
+5. Click "Generate schedule" — Biscuit's high-priority tasks are placed back-to-back starting at 08:00; anything that doesn't fit the remaining time budget lands in the skipped table instead.
+
+### Key Scheduler behaviors shown
+
+- **Priority-first greedy scheduling** within a fixed time budget (`build_schedule()`).
+- **Sorting**, toggled live between priority order and chronological preferred-time order.
+- **Conflict warnings** for same-time tasks and duplicate-title tasks, surfaced before scheduling even runs.
+- **Recurrence**: completing a daily/weekly task creates its next occurrence, gated by `is_due()` so it doesn't count as pending until its due date arrives.
+
+### Sample CLI output
+
+`main.py` runs a fixed demo scenario (independent of the Streamlit session) that exercises sorting, filtering, and conflict detection end-to-end:
+
+```
+=== Today's Schedule ===
+  08:00-08:10  Feeding for Biscuit (10 min, high priority)
+  08:10-08:40  Morning walk for Biscuit (30 min, high priority)
+  08:40-08:45  Medication for Whiskers (5 min, high priority)
+
+Skipped (not enough time left):
+  Playtime for Whiskers (20 min, low priority)
+
+Time used: 45/60 min (15 min remaining)
+
+=== Why this plan? ===
+Included 'Feeding' at 08:00 (priority=high, weight=3)
+Included 'Morning walk' at 08:10 (priority=high, weight=3)
+Included 'Medication' at 08:40 (priority=high, weight=3)
+Skipped 'Playtime' — not enough time remaining (needed 20 min)
+
+=== Tasks sorted by preferred time ===
+     07:00  Morning walk for Biscuit
+     07:00  Medication for Whiskers
+     09:30  Playtime for Whiskers
+     12:00  Litter box cleaning for Whiskers
+     18:00  Feeding for Biscuit
+
+=== Filter: pending tasks for Biscuit ===
+  Feeding (high priority)
+  Morning walk (high priority)
+
+=== Filter: completed tasks (any pet) ===
+  Litter box cleaning for Whiskers
+
+=== Conflict check ===
+  WARNING: Conflict at 07:00: 'Morning walk' (Biscuit), 'Medication' (Whiskers) are all scheduled at the same time.
+```
 
 **Screenshot or video** *(optional)*: <!-- Insert a screenshot or link to a demo video here -->

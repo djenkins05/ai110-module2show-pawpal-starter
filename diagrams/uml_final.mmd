@@ -1,0 +1,83 @@
+classDiagram
+    class Owner {
+        -str name
+        -int available_minutes
+        -str preferred_start_time
+        -list~Pet~ pets
+        +add_pet(pet: Pet) void
+        +get_all_tasks() list~CareTask~
+        +get_time_budget() int
+        +filter_tasks(pet_name: str, completed: bool) list~CareTask~
+        +detect_duplicate_tasks() list~tuple~
+    }
+
+    class Pet {
+        -str name
+        -str species
+        -list~CareTask~ tasks
+        +add_task(task: CareTask) void
+        +remove_task(task: CareTask) void
+        +complete_task(task: CareTask, today: date) CareTask
+        +get_tasks() list~CareTask~
+    }
+
+    class CareTask {
+        -str title
+        -int duration_minutes
+        -str priority
+        -str frequency
+        -bool completed
+        -date completed_at
+        -str pet_name
+        -str preferred_time
+        -date due_date
+        -dict~str,int~ PRIORITY_WEIGHTS$
+        -set~str~ VALID_FREQUENCIES$
+        -dict~str,int~ FREQUENCY_INTERVALS$
+        +priority_weight() int
+        +mark_complete(today: date) void
+        +create_next_occurrence() CareTask
+        +is_due(today: date) bool
+        +__str__() str
+    }
+
+    class ScheduledTask {
+        -CareTask task
+        -time start_time
+        -time end_time
+    }
+
+    class Schedule {
+        -list~ScheduledTask~ scheduled_tasks
+        -list~CareTask~ skipped_tasks
+        -list~CareTask~ not_due_tasks
+        -int total_minutes_used
+        +add_scheduled_task(task: CareTask, start: time) void
+        +time_remaining(budget: int) int
+        +get_scheduled_tasks_sorted_by_time() list~ScheduledTask~
+        +summary() str
+    }
+
+    class Scheduler {
+        -Owner owner
+        -list~CareTask~ tasks
+        -Schedule schedule
+        +build_schedule() Schedule
+        +sort_by_priority() list~CareTask~
+        +sort_by_time() list~CareTask~
+        +detect_time_conflicts() list~str~
+        +filter_tasks(completed: bool, pet_name: str) list~CareTask~
+        +mark_task_complete(task: CareTask) CareTask
+        +explain() str
+    }
+
+    Owner *-- Pet : owns
+    Pet *-- CareTask : owns
+    Scheduler o-- Owner : references
+    Scheduler o-- CareTask : tasks (from owner or passed in)
+    Scheduler *-- Schedule : produces
+    Schedule o-- ScheduledTask : references
+    Schedule o-- CareTask : skipped/not-due
+    ScheduledTask o-- CareTask : references
+
+    

@@ -90,26 +90,62 @@ if owner.pets:
     with col4:
         priority = st.selectbox("Priority", ["low", "medium", "high"], index=2)
     frequency = st.selectbox("Frequency", ["once", "daily", "weekly"])
+    preferred_time = st.text_input(
+        "Preferred time (optional, e.g. 07:30 or 7:30 AM)", value=""
+    ).strip()
 
     if st.button("Add task"):
         pet = next(pet for pet in owner.pets if pet.name == task_pet_name)
-        pet.add_task(
-            CareTask(
-                title=task_title,
-                duration_minutes=int(duration),
-                priority=priority,
-                frequency=frequency,
+        try:
+            pet.add_task(
+                CareTask(
+                    title=task_title,
+                    duration_minutes=int(duration),
+                    priority=priority,
+                    frequency=frequency,
+                    preferred_time=preferred_time or None,
+                )
             )
-        )
-        st.success(f"Added '{task_title}' for {task_pet_name}.")
+            st.success(f"Added '{task_title}' for {task_pet_name}.")
+        except ValueError as error:
+            st.error(str(error))
 else:
     st.info("Add a pet before scheduling tasks.")
 
 all_tasks = owner.get_all_tasks()
 if all_tasks:
     st.write("Current tasks:")
-    for task in all_tasks:
-        st.write(f"- {task}")
+
+    sort_option = st.radio("Sort by", ["Priority", "Time"], horizontal=True)
+    preview_scheduler = Scheduler(owner)
+    ordered_tasks = (
+        preview_scheduler.sort_by_priority()
+        if sort_option == "Priority"
+        else preview_scheduler.sort_by_time()
+    )
+
+    for first, second in owner.detect_duplicate_tasks():
+        st.warning(
+            f"⚠️ Possible duplicate for {first.pet_name}: '{first.title}' is listed more than once."
+        )
+
+    for conflict in preview_scheduler.detect_time_conflicts():
+        st.warning(f"⚠️ {conflict}")
+
+    st.table(
+        [
+            {
+                "Pet": task.pet_name,
+                "Task": task.title,
+                "Duration (min)": task.duration_minutes,
+                "Priority": task.priority,
+                "Frequency": task.frequency,
+                "Preferred Time": task.preferred_time or "—",
+                "Status": "✅ Done" if task.completed else "⏳ Pending",
+            }
+            for task in ordered_tasks
+        ]
+    )
 else:
     st.info("No tasks yet. Add one above.")
 
@@ -122,7 +158,59 @@ if st.button("Generate schedule"):
         st.warning("Add at least one task before generating a schedule.")
     else:
         scheduler = Scheduler(owner)
+
+        for conflict in scheduler.detect_time_conflicts():
+            st.warning(f"⚠️ {conflict}")
+
         schedule = scheduler.build_schedule()
-        st.text(schedule.summary())
-        st.markdown("**Explanation**")
-        st.text(scheduler.explain())
+
+        if schedule.scheduled_tasks:
+            st.success(
+                f"Scheduled {len(schedule.scheduled_tasks)} task(s) using "
+                f"{schedule.total_minutes_used} of {available_minutes} available minutes."
+            )
+            st.table(
+                [
+                    {
+                        "Start": scheduled.start_time.strftime("%H:%M"),
+                        "End": scheduled.end_time.strftime("%H:%M"),
+                        "Pet": scheduled.task.pet_name,
+                        "Task": scheduled.task.title,
+                        "Duration (min)": scheduled.task.duration_minutes,
+                        "Priority": scheduled.task.priority,
+                    }
+                    for scheduled in schedule.get_scheduled_tasks_sorted_by_time()
+                ]
+            )
+        else:
+            st.warning("No tasks could be scheduled with the available time.")
+
+        if schedule.skipped_tasks:
+            st.warning(f"{len(schedule.skipped_tasks)} task(s) skipped — not enough time remaining:")
+            st.table(
+                [
+                    {
+                        "Pet": task.pet_name,
+                        "Task": task.title,
+                        "Duration (min)": task.duration_minutes,
+                        "Priority": task.priority,
+                    }
+                    for task in schedule.skipped_tasks
+                ]
+            )
+
+        if schedule.not_due_tasks:
+            st.info(f"{len(schedule.not_due_tasks)} task(s) not due yet:")
+            st.table(
+                [
+                    {
+                        "Pet": task.pet_name,
+                        "Task": task.title,
+                        "Due": task.due_date.isoformat() if task.due_date else "—",
+                    }
+                    for task in schedule.not_due_tasks
+                ]
+            )
+
+        with st.expander("Why this plan?"):
+            st.text(scheduler.explain())
